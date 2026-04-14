@@ -136,29 +136,49 @@ selected_papers <- recent_share_rank %>%
   pull(paper)
 
 stack_levels <- c("All other papers", rev(selected_papers))
+stack_draw_order <- rev(stack_levels)
 all_years <- sort(unique(raw_total_series$year))
 
-composition_data <- paper_cites %>%
-  mutate(paper_group = if_else(paper %in% selected_papers, paper, "All other papers")) %>%
+selected_series <- paper_cites %>%
+  filter(paper %in% selected_papers) %>%
+  transmute(year = year, paper_group = paper, cites = cites) %>%
   group_by(year, paper_group) %>%
   summarise(cites = sum(cites), .groups = "drop") %>%
-  complete(year = all_years, paper_group = stack_levels, fill = list(cites = 0)) %>%
-  left_join(raw_total_series, by = "year") %>%
+  complete(year = all_years, paper_group = selected_papers, fill = list(cites = 0))
+
+selected_year_totals <- selected_series %>%
+  group_by(year) %>%
+  summarise(selected_cites = sum(cites), .groups = "drop")
+
+residual_series <- raw_total_series %>%
+  left_join(selected_year_totals, by = "year") %>%
   mutate(
-    share = if_else(total > 0, cites / total, 0),
-    paper_group = factor(paper_group, levels = stack_levels)
-  )
+    selected_cites = coalesce(selected_cites, 0),
+    paper_group = "All other papers",
+    cites = pmax(total - selected_cites, 0)
+  ) %>%
+  select(year, paper_group, cites)
+
+composition_data <- bind_rows(selected_series, residual_series) %>%
+  mutate(paper_group = factor(paper_group, levels = stack_levels)) %>%
+  group_by(year) %>%
+  mutate(
+    composition_total = sum(cites),
+    share = if_else(composition_total > 0, cites / composition_total, 0)
+  ) %>%
+  ungroup()
 
 label_data <- composition_data %>%
   filter(year == selection_year) %>%
-  arrange(paper_group) %>%
+  mutate(paper_group_chr = as.character(paper_group)) %>%
+  arrange(match(paper_group_chr, stack_draw_order)) %>%
   mutate(
     ymax = cumsum(share),
     anchor_y = ymax - share / 2,
     label_name = if_else(
-      as.character(paper_group) == "All other papers",
+      paper_group_chr == "All other papers",
       "All other papers",
-      str_trunc(as.character(paper_group), width = 42)
+      str_trunc(paper_group_chr, width = 42)
     ),
     label = paste0(label_name, " ", scales::percent(share, accuracy = 1))
   ) %>%
@@ -170,6 +190,11 @@ label_data <- label_data %>%
 label_order_top_to_bottom <- label_data %>% pull(label_name)
 label_anchor_x <- selection_year + 0.02
 label_text_x <- selection_year + 1.15
+composition_sum_label_year <- composition_data %>%
+  filter(year == selection_year) %>%
+  summarise(total_share = sum(share)) %>%
+  pull(total_share) %>%
+  .[[1]]
 
 accent_colors <- c(
   "#4E79A7", "#59A14F", "#F28E2B", "#E15759",
@@ -186,7 +211,7 @@ if (length(selected_papers) > 0) {
 subtitle_parts <- c(
   paste0(
     "Bottom panel labels the top ", length(selected_papers),
-    " papers by ", selection_year, " share plus all other papers."
+    " papers by ", selection_year, " share; All other papers absorbs the remainder so shares sum to 100%."
   )
 )
 if (latest_total_year == graph_year && day_of_year > 0 && day_of_year < 365) {
@@ -287,6 +312,11 @@ invisible(dev.off())
 cat(sprintf("Graph design: total_line + share_area, top_n=%s, label_year=%s\n", top_n, selection_year))
 cat(sprintf("Selected papers: %s\n", paste(selected_papers, collapse = " | ")))
 cat(sprintf("Label order (top-to-bottom): %s\n", paste(label_order_top_to_bottom, collapse = " | ")))
+cat(sprintf(
+  "Composition sum at label_year: year=%s, total_share=%s\n",
+  selection_year,
+  scales::percent(composition_sum_label_year, accuracy = 0.1)
+))
 cat(sprintf(
   "Annualized aggregate: year=%s, raw=%s, annualized=%.1f, day_of_year=%s\n",
   latest_total_year,

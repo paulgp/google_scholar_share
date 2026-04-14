@@ -12,6 +12,7 @@ SAMPLE = ROOT / "tests" / "data" / "sample_time_series.csv"
 SAMPLE_GAPS = ROOT / "tests" / "data" / "sample_time_series_gaps.csv"
 SAMPLE_EARLY_PAPERS = ROOT / "tests" / "data" / "sample_time_series_early_papers.csv"
 SAMPLE_SHARE_ORDER = ROOT / "tests" / "data" / "sample_time_series_share_order.csv"
+SAMPLE_MISMATCH = ROOT / "tests" / "data" / "sample_time_series_mismatch.csv"
 
 
 class ScholarApiTests(unittest.TestCase):
@@ -138,11 +139,39 @@ class RScriptSmokeTests(unittest.TestCase):
                 result.stdout,
             )
             self.assertIn(
-                "Label order (top-to-bottom): Alpha | Beta | Gamma | Delta | Epsilon | Zeta | Eta | Theta | All other papers",
+                "Label order (top-to-bottom): All other papers | Theta | Eta | Zeta | Epsilon | Delta | Gamma | Beta | Alpha",
+                result.stdout,
+            )
+            self.assertIn(
+                "Composition sum at label_year: year=2026, total_share=100.0%",
                 result.stdout,
             )
             self.assertIn(
                 "Annualized aggregate: year=2026, raw=103, annualized=365.0, day_of_year=103",
+                result.stdout,
+            )
+            self.assertTrue(png_path.exists())
+
+    def test_make_graph_r_normalizes_bottom_panel_to_100_percent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            png_path = Path(tmp) / "paulgp_citation_share.png"
+            env = os.environ.copy()
+            env["MAKE_GRAPH_TODAY"] = "2026-04-13"
+            result = subprocess.run(
+                ["Rscript", "make_graph.R", str(SAMPLE_MISMATCH), str(png_path)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertIn(
+                "Composition sum at label_year: year=2026, total_share=100.0%",
+                result.stdout,
+            )
+            self.assertIn(
+                "Label order (top-to-bottom): All other papers | Gamma | Beta | Alpha",
                 result.stdout,
             )
             self.assertTrue(png_path.exists())
