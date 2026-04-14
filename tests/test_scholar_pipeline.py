@@ -10,6 +10,7 @@ import scholar_api
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = ROOT / "tests" / "data" / "sample_time_series.csv"
 SAMPLE_GAPS = ROOT / "tests" / "data" / "sample_time_series_gaps.csv"
+SAMPLE_EARLY_PAPERS = ROOT / "tests" / "data" / "sample_time_series_early_papers.csv"
 
 
 class ScholarApiTests(unittest.TestCase):
@@ -88,6 +89,33 @@ class RScriptSmokeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             hindex_rows = (out_dir / "paulgp_hindex.csv").read_text().strip().splitlines()
             self.assertEqual(hindex_rows, ["year,hindex", "2019,2", "2020,2"])
+
+    def test_make_graph_r_reports_healy_style_components(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            png_path = Path(tmp) / "paulgp_citation_share.png"
+            result = subprocess.run(
+                ["Rscript", "make_graph.R", str(SAMPLE), str(png_path)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertIn("Graph design: total_line + share_area, top_n=6", result.stdout)
+            self.assertTrue(png_path.exists())
+
+    def test_make_graph_r_handles_paper_years_before_total_series(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            png_path = Path(tmp) / "paulgp_citation_share.png"
+            result = subprocess.run(
+                ["Rscript", "make_graph.R", str(SAMPLE_EARLY_PAPERS), str(png_path)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertTrue(png_path.exists())
 
     def test_make_graph_r_writes_png(self):
         with tempfile.TemporaryDirectory() as tmp:
