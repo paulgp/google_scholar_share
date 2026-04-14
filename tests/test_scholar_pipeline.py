@@ -1,7 +1,9 @@
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import scholar_api
 
@@ -10,6 +12,10 @@ SAMPLE = ROOT / "tests" / "data" / "sample_time_series.csv"
 
 
 class ScholarApiTests(unittest.TestCase):
+    def test_get_api_key_prefers_environment(self):
+        with mock.patch.dict(os.environ, {"SERPAPI_API_KEY": "abc123"}, clear=True):
+            self.assertEqual(scholar_api.get_api_key(), "abc123")
+
     def test_profile_graph_rows_include_total_series(self):
         profile = {
             "cited_by": {
@@ -35,6 +41,23 @@ class ScholarApiTests(unittest.TestCase):
         }
         rows = scholar_api.citation_rows("Paper A", detail)
         self.assertEqual(rows, [[2024, 3, "Paper A"], [2025, 4, "Paper A"]])
+
+    def test_build_author_rows_combines_total_and_article_rows(self):
+        profile = {
+            "articles": [{"title": "Paper A", "citation_id": "cid-1"}],
+            "cited_by": {"graph": [{"year": 2024, "citations": 10}]},
+        }
+        detail_map = {
+            "cid-1": {
+                "citation": {
+                    "total_citations": {
+                        "table": [{"year": 2024, "citations": 3}]
+                    }
+                }
+            }
+        }
+        rows = scholar_api.build_author_rows(profile, detail_map)
+        self.assertEqual(rows, [[2024, 10, "total"], [2024, 3, "Paper A"]])
 
 
 class RScriptSmokeTests(unittest.TestCase):
