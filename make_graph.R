@@ -190,6 +190,7 @@ label_data <- label_data %>%
 label_order_top_to_bottom <- label_data %>% pull(label_name)
 label_anchor_x <- selection_year + 0.02
 label_text_x <- selection_year + 1.15
+shared_x_limits <- c(min(all_years), label_text_x + 0.75)
 composition_sum_label_year <- composition_data %>%
   filter(year == selection_year) %>%
   summarise(total_share = sum(share)) %>%
@@ -236,6 +237,7 @@ total_plot <- ggplot(plot_total_series, aes(x = year, y = total)) +
     breaks = scales::pretty_breaks(n = 6),
     expand = expansion(mult = c(0.01, 0.02))
   ) +
+  coord_cartesian(xlim = shared_x_limits, clip = "off") +
   scale_y_continuous(labels = scales::label_number(big.mark = ",")) +
   theme(
     axis.text.x = element_blank(),
@@ -298,7 +300,7 @@ share_plot <- ggplot(
   scale_colour_manual(values = palette_values) +
   coord_cartesian(
     clip = "off",
-    xlim = c(min(all_years), label_text_x + 0.75),
+    xlim = shared_x_limits,
     ylim = c(0, 1)
   )
 
@@ -323,5 +325,10 @@ cat(sprintf(
   raw_latest_total,
   annualized_latest_total,
   ifelse(latest_total_year == graph_year, day_of_year, 365)
+))
+cat(sprintf(
+  "Shared x-range: xmin=%.2f, xmax=%.2f, x_axes_aligned=TRUE\n",
+  shared_x_limits[[1]],
+  shared_x_limits[[2]]
 ))
 cat(sprintf("Wrote graph to %s\n", output_png))

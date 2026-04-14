@@ -104,6 +104,8 @@ class RScriptSmokeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertEqual(result.stderr, "")
             self.assertIn("Graph design: total_line + share_area, top_n=8", result.stdout)
+            self.assertIn("Shared x-range:", result.stdout)
+            self.assertIn("x_axes_aligned=TRUE", result.stdout)
             self.assertTrue(png_path.exists())
 
     def test_make_graph_r_handles_paper_years_before_total_series(self):
