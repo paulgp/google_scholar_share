@@ -1,65 +1,49 @@
-from serpapi import GoogleSearch
-import os
+from __future__ import annotations
+
+import argparse
 import csv
+from pathlib import Path
 
-# Fill in your serpapi api key
-# Fill in desired author_id from google scholar
-API_KEY = ""
-AUTHOR_ID = "b4cFNacAAAAJ"
-params = {
-    "api_key": API_KEY, 
-    "engine": "google_scholar_author",
-    "author_id": AUTHOR_ID,
-    "hl": "en"
-}
-
-search = GoogleSearch(params)
-results = search.get_dict()
-
-citation_data = {}
-for article in results['articles']:
-  article_title = article.get('title')
-  article_link = article.get('link')
-  article_authors = article.get('authors')
-  article_publication = article.get('publication')
-  cited_by = article.get('cited_by').get('value')
-  cited_by_link = article.get('cited_by').get('link')
-  article_year = article.get('year')
-
-  print(f"Title: {article_title}\nLink: {article_link}\nAuthors: {article_authors}\nPublication: {article_publication}\nCited by: {cited_by}\nCited by link: {cited_by_link}\nPublication year: {article_year}\n")
-
-  params_cite = {
-      "api_key" : API_KEY,
-      "engine" : "google_scholar_author",
-      "view_op" : "view_citation",
-      "citation_id": article.get('citation_id'),
-      "hl": "en"
-  }
-  search2 = GoogleSearch(params_cite)
-  citation = search2.get_dict()
-  citation_data[article_title] = citation
+from scholar_api import (
+    DEFAULT_AUTHOR_ID,
+    DEFAULT_NUM_ARTICLES,
+    build_author_rows,
+    fetch_author_profile,
+    fetch_citation_detail,
+    get_api_key,
+)
 
 
-timeseries_citations = results.get('cited_by').get('graph')
-cite_data = []
-cite_data = [[line.get("year") for line in timeseries_citations],
-             [line.get("citations") for line in timeseries_citations],
-             ["total" for line in timeseries_citations]]
-
-for article in results['articles']:
-  if citation_data.get(article.get('title')).get('error') is None:
-    article_citations = citation_data.get(article.get('title')).get('citation').get('total_citations').get('table')
-    cite_data[0].extend([line.get("year") for line in article_citations])
-    cite_data[1].extend([line.get("citations") for line in article_citations])
-    cite_data[2].extend([article.get('title') for line in article_citations])
-  else:
-    print("No cite data for %s" % article.get('title'))
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Pull Google Scholar citation time series for an author.")
+    parser.add_argument("--author-id", default=DEFAULT_AUTHOR_ID, help="Google Scholar author id")
+    parser.add_argument("--output", default="paulgp_time_series.csv", help="Output CSV path")
+    parser.add_argument("--api-key", default=None, help="SerpAPI key; defaults to SERPAPI_API_KEY")
+    parser.add_argument("--num", type=int, default=DEFAULT_NUM_ARTICLES, help="Number of articles to request")
+    return parser.parse_args()
 
 
-write_data = []
-for i in range(len(cite_data[0])):
-    write_data.append([cite_data[0][i], cite_data[1][i], cite_data[2][i]])
+def main() -> int:
+    args = parse_args()
+    api_key = get_api_key(args.api_key)
+    profile = fetch_author_profile(args.author_id, api_key, num=args.num)
 
-with open("milgrom_time_series.csv", 'w') as f:
-    writer = csv.writer(f)
-    writer.writerows(write_data)
+    detail_map = {}
+    for article in profile.get("articles", []):
+        citation_id = article.get("citation_id")
+        if not citation_id:
+            continue
+        detail_map[citation_id] = fetch_citation_detail(citation_id, api_key)
+
+    rows = build_author_rows(profile, detail_map)
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="") as handle:
+        csv.writer(handle).writerows(rows)
+
+    print(f"Wrote {len(rows)} rows to {output_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
