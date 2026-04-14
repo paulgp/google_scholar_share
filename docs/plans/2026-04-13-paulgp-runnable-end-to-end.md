@@ -1,13 +1,13 @@
 # Paul GP Runnable Pipeline Implementation Plan
 
 **Goal:** Make the Paul Goldsmith-Pinkham pipeline runnable end-to-end from this repository, refresh `paulgp_time_series.csv`, and produce non-interactive analysis outputs.
-**Architecture:** Replace the missing Python `serpapi` client dependency with a tiny standard-library HTTP helper shared by the Python scripts. Keep the workflow as fetch → analyze → graph, but make the R steps non-interactive and file-producing so they work under `Rscript` and in CI-like shells.
+**Architecture:** Keep the Python `serpapi` client, but make the repo runnable by declaring it explicitly in `requirements.txt` and wrapping the data pull in a small reusable helper module. Keep the workflow as fetch → analyze → graph, but make the R steps non-interactive and file-producing so they work under `Rscript` and in CI-like shells.
 **Tech Stack:** Python 3 stdlib (`json`, `csv`, `urllib`, `argparse`, `unittest`, `subprocess`), R (`tidyverse`, `ggrepel`), SerpAPI HTTP JSON endpoint.
 
-- [ ] Task 1: Add failing tests for the Python fetch/transform layer and R script smoke tests
-- [ ] Task 2: Implement a shared SerpAPI HTTP helper with stdlib only
-- [ ] Task 3: Refactor `pull_data.py` and `pull_cohorts.py` to use the helper and stable CSV writing
-- [ ] Task 4: Implement a non-interactive analysis script and fix the plotting script
+- [x] Task 1: Add failing tests for the Python fetch/transform layer and R script smoke tests ✅
+- [x] Task 2: Implement a shared SerpAPI wrapper module and declare the Python dependency ✅
+- [x] Task 3: Refactor `pull_data.py` to use the helper and stable CSV writing ✅
+- [x] Task 4: Implement a non-interactive analysis script and fix the plotting script ✅
 - [ ] Task 5: Update documentation and verification commands
 - [ ] Task 6: Refresh `paulgp_time_series.csv` and verify the full pipeline
 
