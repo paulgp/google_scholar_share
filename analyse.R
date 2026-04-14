@@ -43,10 +43,14 @@ hindex_for_year <- function(values) {
   max(passing)
 }
 
-if (nrow(paper_cites) == 0) {
+all_years <- sort(unique(paulgp$year))
+
+if (nrow(paper_cites) == 0 || length(all_years) == 0) {
   hindex_time <- tibble(year = numeric(), hindex = numeric())
 } else {
   hindex_time <- paper_cites %>%
+    select(paper, year, cites) %>%
+    complete(paper, year = all_years, fill = list(cites = 0)) %>%
     arrange(paper, year) %>%
     group_by(paper) %>%
     mutate(cumulative_cites = cumsum(cites)) %>%

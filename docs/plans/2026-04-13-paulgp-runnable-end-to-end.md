@@ -8,8 +8,8 @@
 - [x] Task 2: Implement a shared SerpAPI wrapper module and declare the Python dependency ✅
 - [x] Task 3: Refactor `pull_data.py` to use the helper and stable CSV writing ✅
 - [x] Task 4: Implement a non-interactive analysis script and fix the plotting script ✅
-- [ ] Task 5: Update documentation and verification commands
-- [ ] Task 6: Refresh `paulgp_time_series.csv` and verify the full pipeline
+- [x] Task 5: Update documentation and verification commands ✅
+- [x] Task 6: Refresh `paulgp_time_series.csv` and verify the full pipeline ✅
 
 ### Task 1: Add failing tests for the Python fetch/transform layer and R script smoke tests
 

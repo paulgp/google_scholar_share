@@ -9,6 +9,7 @@ import scholar_api
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = ROOT / "tests" / "data" / "sample_time_series.csv"
+SAMPLE_GAPS = ROOT / "tests" / "data" / "sample_time_series_gaps.csv"
 
 
 class ScholarApiTests(unittest.TestCase):
@@ -74,6 +75,19 @@ class RScriptSmokeTests(unittest.TestCase):
             self.assertTrue((out_dir / "paulgp_summary.csv").exists())
             self.assertTrue((out_dir / "paulgp_hindex.csv").exists())
             self.assertTrue((out_dir / "paulgp_top_papers.csv").exists())
+
+    def test_analyse_r_carries_forward_hindex_across_missing_years(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "outputs"
+            result = subprocess.run(
+                ["Rscript", "analyse.R", str(SAMPLE_GAPS), str(out_dir)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            hindex_rows = (out_dir / "paulgp_hindex.csv").read_text().strip().splitlines()
+            self.assertEqual(hindex_rows, ["year,hindex", "2019,2", "2020,2"])
 
     def test_make_graph_r_writes_png(self):
         with tempfile.TemporaryDirectory() as tmp:
