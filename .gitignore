@@ -1,2 +1,6 @@
 .worktrees/
 .venv/
+.env
+.superpowers/
+*_time_series.csv
+outputs/

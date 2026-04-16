@@ -1,6 +1,6 @@
 suppressPackageStartupMessages({
   library(tidyverse)
-  library(grid)
+  library(patchwork)
 })
 
 resolve_graph_today <- function() {
@@ -13,12 +13,8 @@ resolve_graph_today <- function() {
 
 spread_label_positions <- function(anchor_y, top = 0.97, bottom = 0.03) {
   n <- length(anchor_y)
-  if (n == 0) {
-    return(numeric())
-  }
-  if (n == 1) {
-    return(min(max(anchor_y[[1]], bottom), top))
-  }
+  if (n == 0) return(numeric())
+  if (n == 1) return(min(max(anchor_y[[1]], bottom), top))
 
   min_gap <- min(0.055, (top - bottom) / (n - 1))
   positions <- anchor_y
@@ -36,14 +32,10 @@ spread_label_positions <- function(anchor_y, top = 0.97, bottom = 0.03) {
   }
 
   overflow_top <- positions[[1]] - top
-  if (overflow_top > 0) {
-    positions <- positions - overflow_top
-  }
+  if (overflow_top > 0) positions <- positions - overflow_top
 
   overflow_bottom <- bottom - positions[[n]]
-  if (overflow_bottom > 0) {
-    positions <- positions + overflow_bottom
-  }
+  if (overflow_bottom > 0) positions <- positions + overflow_bottom
 
   positions
 }
@@ -65,6 +57,7 @@ theme_healy <- function() {
     )
 }
 
+# --- CLI args and data loading ---
 args <- commandArgs(trailingOnly = TRUE)
 input_csv <- if (length(args) >= 1) args[[1]] else "paulgp_time_series.csv"
 output_png <- if (length(args) >= 2) args[[2]] else "outputs/paulgp_citation_share.png"
@@ -82,6 +75,7 @@ graph_today <- resolve_graph_today()
 graph_year <- as.integer(format(graph_today, "%Y"))
 day_of_year <- as.integer(format(graph_today, "%j"))
 
+# --- Compute totals ---
 profile_total_series <- time_series %>%
   filter(paper == "total") %>%
   transmute(year = year, profile_total = cites)
@@ -115,6 +109,7 @@ if (latest_total_year == graph_year && day_of_year > 0 && day_of_year < 365) {
 plot_total_series <- raw_total_series %>%
   mutate(total = if_else(year == latest_total_year, annualized_latest_total, as.numeric(total)))
 
+# --- Select top N papers by recent share ---
 selection_year <- max(paper_cites$year)
 selection_total <- raw_total_series %>%
   filter(year == selection_year) %>%
@@ -135,51 +130,101 @@ selected_papers <- recent_share_rank %>%
   slice_head(n = min(top_n, nrow(recent_share_rank))) %>%
   pull(paper)
 
-stack_levels <- c("All other papers", rev(selected_papers))
-stack_draw_order <- rev(stack_levels)
+other_papers <- recent_share_rank %>%
+  filter(!paper %in% selected_papers) %>%
+  pull(paper)
+
+# --- Build stacked data for ALL papers + residual ---
+residual_label <- "Untracked papers"
+all_papers <- c(selected_papers, other_papers)
 all_years <- sort(unique(raw_total_series$year))
 
-selected_series <- paper_cites %>%
-  filter(paper %in% selected_papers) %>%
-  transmute(year = year, paper_group = paper, cites = cites) %>%
-  group_by(year, paper_group) %>%
+all_paper_series <- paper_cites %>%
+  group_by(year, paper) %>%
   summarise(cites = sum(cites), .groups = "drop") %>%
-  complete(year = all_years, paper_group = selected_papers, fill = list(cites = 0))
+  complete(year = all_years, paper = all_papers, fill = list(cites = 0))
 
-selected_year_totals <- selected_series %>%
+# Compute residual: profile total minus sum of all tracked papers
+tracked_year_totals <- all_paper_series %>%
   group_by(year) %>%
-  summarise(selected_cites = sum(cites), .groups = "drop")
+  summarise(tracked_cites = sum(cites), .groups = "drop")
 
 residual_series <- raw_total_series %>%
-  left_join(selected_year_totals, by = "year") %>%
+  left_join(tracked_year_totals, by = "year") %>%
   mutate(
-    selected_cites = coalesce(selected_cites, 0),
-    paper_group = "All other papers",
-    cites = pmax(total - selected_cites, 0)
+    tracked_cites = coalesce(tracked_cites, 0),
+    paper = residual_label,
+    cites = pmax(total - tracked_cites, 0)
   ) %>%
-  select(year, paper_group, cites)
+  select(year, paper, cites)
 
-composition_data <- bind_rows(selected_series, residual_series) %>%
-  mutate(paper_group = factor(paper_group, levels = stack_levels)) %>%
-  group_by(year) %>%
+all_paper_series <- bind_rows(all_paper_series, residual_series) %>%
+  left_join(raw_total_series, by = "year") %>%
   mutate(
-    composition_total = sum(cites),
-    share = if_else(composition_total > 0, cites / composition_total, 0)
+    share = if_else(total > 0, cites / total, 0)
   ) %>%
-  ungroup()
+  select(year, paper, cites, share)
 
-label_data <- composition_data %>%
-  filter(year == selection_year) %>%
-  mutate(paper_group_chr = as.character(paper_group)) %>%
-  arrange(match(paper_group_chr, stack_draw_order)) %>%
+# Stack order: selected papers at bottom (biggest first), then other papers, residual on top
+stack_levels <- rev(c(rev(selected_papers), rev(other_papers), residual_label))
+stack_draw_order <- rev(stack_levels)
+
+composition_data <- all_paper_series %>%
+  mutate(paper = factor(paper, levels = stack_levels))
+
+# --- Color palette ---
+# Healy-inspired bold palette for top papers
+healy_bold <- c(
+  "#0F4C81",  # deep blue
+  "#C23B22",  # brick red
+  "#1A7C6C",  # deep teal
+  "#D97925",  # burnt sienna
+  "#7B2D8E",  # deep purple
+  "#2D8E47",  # forest green
+  "#C49B1A",  # dark gold
+  "#A04060"   # berry
+)
+
+# Muted palette for remaining papers — desaturated earth/pastel tones
+n_other <- length(other_papers)
+if (n_other > 0) {
+  hues <- seq(15, 345, length.out = n_other + 1)[seq_len(n_other)]
+  muted_colors <- hcl(h = hues, c = 35, l = 75)
+} else {
+  muted_colors <- character(0)
+}
+
+palette_values <- stats::setNames(
+  c(healy_bold[seq_len(length(selected_papers))], muted_colors, "#D5D0C8"),
+  c(selected_papers, other_papers, residual_label)
+)
+
+# --- Shared x-axis config (needed before building base plot) ---
+label_anchor_x <- selection_year + 0.02
+label_text_x <- selection_year + 1.15
+shared_x_limits <- c(min(all_years), label_text_x + 0.75)
+shared_breaks <- scales::pretty_breaks(n = 6)
+
+# --- Labels: extract actual band positions from ggplot ---
+# Build a bare area plot to get the real stacked ymin/ymax values
+base_area_plot <- ggplot(composition_data, aes(x = year, y = share, fill = paper)) +
+  geom_area(position = "stack")
+area_layer_data <- layer_data(base_area_plot, 1)
+
+# Map ggplot's integer group back to paper names
+paper_levels <- levels(composition_data$paper)
+group_lookup <- tibble(group = seq_along(paper_levels), paper_name = paper_levels)
+
+label_data <- area_layer_data %>%
+  filter(x == selection_year) %>%
+  select(group, ymin, ymax) %>%
+  left_join(group_lookup, by = "group") %>%
+  filter(paper_name %in% selected_papers) %>%
   mutate(
-    ymax = cumsum(share),
-    anchor_y = ymax - share / 2,
-    label_name = if_else(
-      paper_group_chr == "All other papers",
-      "All other papers",
-      str_trunc(paper_group_chr, width = 42)
-    ),
+    paper = factor(paper_name, levels = stack_levels),
+    share = ymax - ymin,
+    anchor_y = (ymin + ymax) / 2,
+    label_name = str_trunc(paper_name, width = 42),
     label = paste0(label_name, " ", scales::percent(share, accuracy = 1))
   ) %>%
   arrange(desc(anchor_y), desc(share), label_name)
@@ -188,31 +233,12 @@ label_data <- label_data %>%
   mutate(label_y = spread_label_positions(anchor_y))
 
 label_order_top_to_bottom <- label_data %>% pull(label_name)
-label_anchor_x <- selection_year + 0.02
-label_text_x <- selection_year + 1.15
-shared_x_limits <- c(min(all_years), label_text_x + 0.75)
-composition_sum_label_year <- composition_data %>%
-  filter(year == selection_year) %>%
-  summarise(total_share = sum(share)) %>%
-  pull(total_share) %>%
-  .[[1]]
 
-accent_colors <- c(
-  "#4E79A7", "#59A14F", "#F28E2B", "#E15759",
-  "#76B7B2", "#B07AA1", "#EDC948", "#9C755F"
-)
-palette_values <- c("All other papers" = "#D9D9D9")
-if (length(selected_papers) > 0) {
-  palette_values <- c(
-    palette_values,
-    stats::setNames(accent_colors[seq_len(length(selected_papers))], selected_papers)
-  )
-}
-
+# --- Subtitle ---
 subtitle_parts <- c(
   paste0(
-    "Bottom panel labels the top ", length(selected_papers),
-    " papers by ", selection_year, " share; All other papers absorbs the remainder so shares sum to 100%."
+    "Top ", length(selected_papers),
+    " papers labeled by ", selection_year, " share. All papers colored individually."
   )
 )
 if (latest_total_year == graph_year && day_of_year > 0 && day_of_year < 365) {
@@ -226,6 +252,7 @@ if (latest_total_year == graph_year && day_of_year > 0 && day_of_year < 365) {
 }
 subtitle_text <- paste(subtitle_parts, collapse = " ")
 
+# --- Top panel: total citations line ---
 total_plot <- ggplot(plot_total_series, aes(x = year, y = total)) +
   theme_healy() +
   labs(
@@ -234,11 +261,11 @@ total_plot <- ggplot(plot_total_series, aes(x = year, y = total)) +
     y = "Annual citations"
   ) +
   scale_x_continuous(
-    breaks = scales::pretty_breaks(n = 6),
-    expand = expansion(mult = c(0.01, 0.02))
+    breaks = shared_breaks,
+    expand = expansion(mult = c(0.01, 0))
   ) +
-  coord_cartesian(xlim = shared_x_limits, clip = "off") +
   scale_y_continuous(labels = scales::label_number(big.mark = ",")) +
+  coord_cartesian(xlim = shared_x_limits) +
   theme(
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
@@ -257,40 +284,32 @@ if (latest_total_year == graph_year && day_of_year > 0 && day_of_year < 365) {
   total_plot <- total_plot +
     geom_point(
       data = plot_total_series %>% filter(year == latest_total_year),
-      shape = 21,
-      fill = "#FFFFFF",
-      colour = "#222222",
-      stroke = 0.8,
-      size = 2.6
+      shape = 21, fill = "#FFFFFF", colour = "#222222", stroke = 0.8, size = 2.6
     )
 }
 
+# --- Bottom panel: stacked area of ALL papers ---
 share_plot <- ggplot(
   composition_data,
-  aes(x = year, y = share, fill = paper_group)
+  aes(x = year, y = share, fill = paper)
 ) +
-  geom_area(stat = "identity", colour = "white", linewidth = 0.25, alpha = 0.98) +
+  geom_area(position = "stack", colour = "white", linewidth = 0.15, alpha = 0.92) +
   geom_segment(
     data = label_data,
-    aes(x = label_anchor_x, xend = label_text_x - 0.08, y = anchor_y, yend = label_y, colour = paper_group),
-    inherit.aes = FALSE,
-    linewidth = 0.35,
-    show.legend = FALSE
+    aes(x = label_anchor_x, xend = label_text_x - 0.08,
+        y = anchor_y, yend = label_y, colour = paper),
+    inherit.aes = FALSE, linewidth = 0.35, show.legend = FALSE
   ) +
   geom_text(
     data = label_data,
-    aes(x = label_text_x, y = label_y, label = label, colour = paper_group),
-    inherit.aes = FALSE,
-    hjust = 0,
-    size = 3.0,
-    lineheight = 0.95,
-    show.legend = FALSE
+    aes(x = label_text_x, y = label_y, label = label, colour = paper),
+    inherit.aes = FALSE, hjust = 0, size = 3.0, lineheight = 0.95, show.legend = FALSE
   ) +
   theme_healy() +
   labs(y = "Share of annual citations") +
   scale_x_continuous(
-    breaks = scales::pretty_breaks(n = 6),
-    expand = expansion(mult = c(0.01, 0.22))
+    breaks = shared_breaks,
+    expand = expansion(mult = c(0.01, 0))
   ) +
   scale_y_continuous(
     labels = scales::label_percent(accuracy = 1),
@@ -298,37 +317,22 @@ share_plot <- ggplot(
   ) +
   scale_fill_manual(values = palette_values) +
   scale_colour_manual(values = palette_values) +
-  coord_cartesian(
-    clip = "off",
-    xlim = shared_x_limits,
-    ylim = c(0, 1)
-  )
+  coord_cartesian(clip = "off", xlim = shared_x_limits, ylim = c(0, 1))
 
-png(output_png, width = 12.5, height = 9.5, units = "in", res = 160)
-grid.newpage()
-pushViewport(viewport(layout = grid.layout(nrow = 2, ncol = 1, heights = unit(c(0.95, 2.1), "null"))))
-print(total_plot, vp = viewport(layout.pos.row = 1, layout.pos.col = 1))
-print(share_plot, vp = viewport(layout.pos.row = 2, layout.pos.col = 1))
-invisible(dev.off())
+# --- Combine with patchwork ---
+combined <- total_plot / share_plot +
+  plot_layout(heights = c(0.95, 2.1))
 
+ggsave(output_png, combined, width = 15.5, height = 9.5, units = "in", dpi = 160)
+
+# --- Diagnostics ---
 cat(sprintf("Graph design: total_line + share_area, top_n=%s, label_year=%s\n", top_n, selection_year))
+cat(sprintf("Total papers colored: %s (top %s labeled)\n", length(all_papers), length(selected_papers)))
 cat(sprintf("Selected papers: %s\n", paste(selected_papers, collapse = " | ")))
 cat(sprintf("Label order (top-to-bottom): %s\n", paste(label_order_top_to_bottom, collapse = " | ")))
 cat(sprintf(
-  "Composition sum at label_year: year=%s, total_share=%s\n",
-  selection_year,
-  scales::percent(composition_sum_label_year, accuracy = 0.1)
-))
-cat(sprintf(
   "Annualized aggregate: year=%s, raw=%s, annualized=%.1f, day_of_year=%s\n",
-  latest_total_year,
-  raw_latest_total,
-  annualized_latest_total,
+  latest_total_year, raw_latest_total, annualized_latest_total,
   ifelse(latest_total_year == graph_year, day_of_year, 365)
-))
-cat(sprintf(
-  "Shared x-range: xmin=%.2f, xmax=%.2f, x_axes_aligned=TRUE\n",
-  shared_x_limits[[1]],
-  shared_x_limits[[2]]
 ))
 cat(sprintf("Wrote graph to %s\n", output_png))

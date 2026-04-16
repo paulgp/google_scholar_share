@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "google-search-results==2.4.2",
+# ]
+# ///
+
 from __future__ import annotations
 
 import os

@@ -1,8 +1,19 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "google-search-results==2.4.2",
+#     "python-dotenv>=1.0",
+# ]
+# ///
+
 from __future__ import annotations
 
 import argparse
 import csv
 from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from scholar_api import (
     DEFAULT_AUTHOR_ID,
