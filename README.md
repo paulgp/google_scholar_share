@@ -1,45 +1,47 @@
 # google_scholar_share
 
-Simple scripts to pull Google Scholar citation time-series data from an author's profile and generate analysis outputs.
+Pull Google Scholar citation time-series data for any author and generate a two-panel graph showing total citations and per-paper share over time.
 
 ## Setup
 
-Create a virtual environment and install the Python dependency:
+Set your SerpAPI key (get one at <https://serpapi.com/>):
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+echo 'SERPAPI_API_KEY=your_key_here' > .env
 ```
 
-Set your SerpAPI key:
+That's it. Scripts use [uv](https://docs.astral.sh/uv/) with inline PEP 723 dependencies, so no manual install step is needed.
+
+## Pull data for an author
+
+Find the author's Google Scholar ID from their profile URL (`user=XXXX`), then:
 
 ```bash
-export SERPAPI_API_KEY=your_serpapi_key_here
+uv run pull_data.py --author-id ldL9aVEAAAAJ --output paulgp_time_series.csv
 ```
 
-You can get a key from <https://serpapi.com/>.
-
-## Refresh Paul Goldsmith-Pinkham data
+## Generate the graph
 
 ```bash
-.venv/bin/python pull_data.py --author-id ldL9aVEAAAAJ --output paulgp_time_series.csv
-```
-
-## Generate analysis outputs
-
-```bash
-Rscript analyse.R paulgp_time_series.csv outputs
 Rscript make_graph.R paulgp_time_series.csv outputs/paulgp_citation_share.png
 ```
 
-This writes:
-- `outputs/paulgp_summary.csv`
-- `outputs/paulgp_hindex.csv`
-- `outputs/paulgp_top_papers.csv`
-- `outputs/paulgp_citation_share.png`
+Requires R with `tidyverse` and `patchwork` packages.
+
+## Example: multiple authors
+
+```bash
+# Paul Goldsmith-Pinkham
+uv run pull_data.py --author-id ldL9aVEAAAAJ --output paulgp_time_series.csv
+Rscript make_graph.R paulgp_time_series.csv outputs/paulgp_citation_share.png
+
+# Isaac Sorkin
+uv run pull_data.py --author-id H9pBCR0AAAAJ --output sorkin_time_series.csv
+Rscript make_graph.R sorkin_time_series.csv outputs/sorkin_citation_share.png
+```
 
 ## Run tests
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
+uv run -m unittest discover -s tests -v
 ```
