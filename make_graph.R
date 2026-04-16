@@ -86,6 +86,10 @@ if (nrow(profile_total_series) == 0 || nrow(paper_cites) == 0) {
   stop("make_graph.R requires total and paper citation rows")
 }
 
+# Clip paper data to the year range of the total series
+min_total_year <- min(profile_total_series$year)
+paper_cites <- paper_cites %>% filter(year >= min_total_year)
+
 paper_year_totals <- paper_cites %>%
   group_by(year) %>%
   summarise(paper_total = sum(cites), .groups = "drop")
