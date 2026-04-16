@@ -28,16 +28,12 @@ Rscript make_graph.R paulgp_time_series.csv outputs/paulgp_citation_share.png
 
 Requires R with `tidyverse` and `patchwork` packages.
 
-## Example: multiple authors
+## Example
 
 ```bash
 # Paul Goldsmith-Pinkham
 uv run pull_data.py --author-id ldL9aVEAAAAJ --output paulgp_time_series.csv
 Rscript make_graph.R paulgp_time_series.csv outputs/paulgp_citation_share.png
-
-# Isaac Sorkin
-uv run pull_data.py --author-id H9pBCR0AAAAJ --output sorkin_time_series.csv
-Rscript make_graph.R sorkin_time_series.csv outputs/sorkin_citation_share.png
 ```
 
 ## Run tests
